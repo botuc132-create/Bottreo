@@ -1,14 +1,21 @@
-# Free Fire Account Manager for Railway
+# Free Fire Manager V2
 
-## Deploy
-1. Upload these files to a private GitHub repository.
-2. In Railway, create a project from that repository.
-3. In the service Variables, set:
-   - `TELEGRAM_BOT_TOKEN`: token from @BotFather
-   - `ADMIN_IDS`: your numeric Telegram user ID
-4. Deploy and open the bot; send `/start`.
+This version adds:
+- add up to five UIDs
+- select up to four UIDs
+- Run / Stop control state
+- status and delete menus
 
-This is an account-list manager for up to five UIDs. It does not log into Free Fire or automate ranked gameplay.
+Important: Run/Stop currently controls the bot's orchestration flag only. It does not launch Free Fire or automate ranked matches. A separate compatible game-running environment and supported control interface would be required.
 
-## Note on storage
-The default SQLite path `/tmp/accounts.db` is ephemeral on Railway. For durable storage, configure PostgreSQL or a persistent volume before relying on it.
+## Railway
+1. Upload these files to your private GitHub repo, replacing the previous files.
+2. Railway redeploys from the connected repo.
+3. Set Variables:
+   - TELEGRAM_BOT_TOKEN = token from @BotFather
+   - ADMIN_IDS = your numeric Telegram user ID
+4. Check deploy logs, then send /start to your bot.
+
+## Data persistence
+The default JSON file under /tmp is ephemeral. For durable storage, migrate to PostgreSQL or a persistent volume.
+Never put passwords or JWT/access tokens into chat or source code.
