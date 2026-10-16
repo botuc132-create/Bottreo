@@ -2,7 +2,7 @@ import os
 import logging
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 logging.basicConfig(level=logging.INFO)
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -17,102 +17,92 @@ def db():
         owner_id INTEGER NOT NULL,
         uid TEXT NOT NULL,
         label TEXT NOT NULL DEFAULT '',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(owner_id, uid)
     )""")
     return conn
 
-def is_admin(user_id: int) -> bool:
+def allowed(user_id):
     return not ADMIN_IDS or user_id in ADMIN_IDS
 
 def menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Thêm UID", callback_data="add"),
          InlineKeyboardButton("📋 Danh sách", callback_data="list")],
-        [InlineKeyboardButton("🗑 Xóa tài khoản", callback_data="delete"),
+        [InlineKeyboardButton("🗑 Xóa UID", callback_data="delete"),
          InlineKeyboardButton("ℹ️ Trợ giúp", callback_data="help")]
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
+    if not allowed(update.effective_user.id):
         await update.message.reply_text("Bạn không có quyền sử dụng bot.")
         return
     await update.message.reply_text(
-        "🎮 FREE FIRE ACCOUNT MANAGER\\n\\nQuản lý tối đa 5 UID. "
-        "Bản này chỉ lưu UID/ghi chú, không đăng nhập game hoặc tự động chơi trận.",
+        "🎮 FREE FIRE ACCOUNT MANAGER\n\nQuản lý tối đa 5 UID. "
+        "Bản này chỉ lưu UID/ghi chú; không đăng nhập game hoặc tự động chơi trận.",
         reply_markup=menu()
     )
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    uid = q.from_user.id
-    if not is_admin(uid):
-        await q.edit_message_text("Bạn không có quyền sử dụng bot.")
+    owner = q.from_user.id
+    if not allowed(owner):
+        await q.message.reply_text("Bạn không có quyền sử dụng bot.")
         return
     if q.data == "add":
-        context.user_data["awaiting"] = "add"
-        await q.message.reply_text("Gửi theo mẫu: UID hoặc UID | tên ghi chú")
+        context.user_data["awaiting"] = True
+        await q.message.reply_text("Gửi UID hoặc theo mẫu: UID | tên ghi chú")
     elif q.data == "list":
         conn = db()
-        rows = conn.execute("SELECT id, uid, label FROM accounts WHERE owner_id=? ORDER BY id", (uid,)).fetchall()
+        rows = conn.execute("SELECT id, uid, label FROM accounts WHERE owner_id=? ORDER BY id", (owner,)).fetchall()
         conn.close()
-        if not rows:
-            await q.message.reply_text("Chưa có tài khoản nào được lưu.")
-        else:
-            await q.message.reply_text("\\n".join(f"{i}. UID: {u}" + (f" — {l}" if l else "") for i,u,l in rows))
+        await q.message.reply_text("\n".join(f"{n}. UID {u}" + (f" — {label}" if label else "") for n, (_,u,label) in enumerate(rows, 1)) or "Chưa có UID nào.")
     elif q.data == "delete":
         conn = db()
-        rows = conn.execute("SELECT id, uid FROM accounts WHERE owner_id=? ORDER BY id", (uid,)).fetchall()
+        rows = conn.execute("SELECT id, uid FROM accounts WHERE owner_id=? ORDER BY id", (owner,)).fetchall()
         conn.close()
         if not rows:
             await q.message.reply_text("Danh sách đang trống.")
         else:
-            kb = [[InlineKeyboardButton(f"Xóa {u}", callback_data=f"del:{i}")] for i,u in rows]
-            await q.message.reply_text("Chọn UID cần xóa:", reply_markup=InlineKeyboardMarkup(kb))
+            await q.message.reply_text("Chọn UID cần xóa:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f"Xóa {u}", callback_data=f"del:{i}")] for i,u in rows]))
     elif q.data.startswith("del:"):
-        account_id = int(q.data.split(":",1)[1])
         conn = db()
-        conn.execute("DELETE FROM accounts WHERE id=? AND owner_id=?", (account_id, uid))
+        conn.execute("DELETE FROM accounts WHERE id=? AND owner_id=?", (int(q.data.split(":")[1]), owner))
         conn.commit()
         conn.close()
-        await q.message.reply_text("Đã xóa UID khỏi danh sách.")
+        await q.message.reply_text("Đã xóa UID.")
     elif q.data == "help":
-        await q.message.reply_text("Dùng ➕ Thêm UID để lưu UID và ghi chú; 📋 Danh sách để xem; 🗑 để xóa. Không gửi mật khẩu, Access Token hoặc JWT vào bot.")
+        await q.message.reply_text("Không gửi mật khẩu, Access Token hoặc JWT vào bot. Dùng menu để thêm, xem hoặc xóa UID.")
 
-async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if not is_admin(user.id):
+async def messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    owner = update.effective_user.id
+    if not allowed(owner) or not context.user_data.get("awaiting"):
         return
-    if context.user_data.get("awaiting") != "add":
-        await update.message.reply_text("Chọn chức năng trong menu /start.")
-        return
-    raw = update.message.text.strip()
-    parts = [p.strip() for p in raw.split("|", 1)]
-    uid = parts[0]
-    label = parts[1] if len(parts) > 1 else ""
+    parts = [p.strip() for p in update.message.text.split("|", 1)]
+    uid, label = parts[0], parts[1] if len(parts) > 1 else ""
     if not uid.isdigit():
-        await update.message.reply_text("UID cần là dãy số. Hãy gửi lại theo mẫu: 123456789 hoặc 123456789 | Acc 1")
+        await update.message.reply_text("UID phải là dãy số. Gửi lại theo mẫu: 123456789 | Acc 1")
         return
     conn = db()
-    count = conn.execute("SELECT COUNT(*) FROM accounts WHERE owner_id=?", (user.id,)).fetchone()[0]
-    exists = conn.execute("SELECT 1 FROM accounts WHERE owner_id=? AND uid=?", (user.id, uid)).fetchone()
+    count = conn.execute("SELECT COUNT(*) FROM accounts WHERE owner_id=?", (owner,)).fetchone()[0]
+    exists = conn.execute("SELECT 1 FROM accounts WHERE owner_id=? AND uid=?", (owner, uid)).fetchone()
     if exists:
-        await update.message.reply_text("UID này đã có trong danh sách.")
+        msg = "UID này đã được lưu."
     elif count >= MAX_ACCOUNTS:
-        await update.message.reply_text("Đã đạt giới hạn 5 tài khoản. Hãy xóa một UID trước.")
+        msg = "Đã đủ 5 UID. Hãy xóa một UID trước."
     else:
-        conn.execute("INSERT INTO accounts(owner_id, uid, label) VALUES(?,?,?)", (user.id, uid, label))
+        conn.execute("INSERT INTO accounts(owner_id, uid, label) VALUES(?,?,?)", (owner, uid, label))
         conn.commit()
-        await update.message.reply_text(f"Đã lưu UID {uid}.", reply_markup=menu())
+        msg = f"Đã lưu UID {uid}."
     conn.close()
-    context.user_data["awaiting"] = None
+    context.user_data["awaiting"] = False
+    await update.message.reply_text(msg, reply_markup=menu())
 
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
+    app.add_handler(CallbackQueryHandler(buttons))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, messages))
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

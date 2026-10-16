@@ -1,25 +1,14 @@
-# Free Fire Account Manager (Telegram)
+# Free Fire Account Manager for Railway
 
-Starter bot for Railway. It stores up to five Free Fire UIDs and optional labels.
-It does **not** log into Free Fire, store passwords/tokens, automate gameplay, or queue ranked matches.
+## Deploy
+1. Upload these files to a private GitHub repository.
+2. In Railway, create a project from that repository.
+3. In the service Variables, set:
+   - `TELEGRAM_BOT_TOKEN`: token from @BotFather
+   - `ADMIN_IDS`: your numeric Telegram user ID
+4. Deploy and open the bot; send `/start`.
 
-## Setup
-1. Create a Telegram bot with @BotFather and copy its token.
-2. Get your Telegram numeric user ID using a trusted ID bot or Telegram tooling.
-3. Push these files to a private GitHub repository.
-4. In Railway, create a project -> Deploy from GitHub repo.
-5. Add Variables:
-   - `TELEGRAM_BOT_TOKEN` = token from BotFather
-   - `ADMIN_IDS` = your numeric Telegram user ID
-6. Deploy. Railway detects `Procfile` and runs `python bot.py`.
+This is an account-list manager for up to five UIDs. It does not log into Free Fire or automate ranked gameplay.
 
-## Persistence
-SQLite at `/tmp` is ephemeral on Railway and may be erased during redeploy. For durable storage, add Railway PostgreSQL and replace the SQLite functions with PostgreSQL, or use a persistent volume. Do not store game passwords or bearer tokens in this starter.
-
-## Commands
-- `/start`: show menu
-- Add UID: stores a numeric UID and optional label
-- List: show saved UIDs
-- Delete: remove a saved UID
-
-Keep the repository private and never commit `.env` or real tokens.
+## Note on storage
+The default SQLite path `/tmp/accounts.db` is ephemeral on Railway. For durable storage, configure PostgreSQL or a persistent volume before relying on it.
